@@ -20,10 +20,10 @@
               <RouterLink class="nav-link" to="/">Home</RouterLink>
             </li>
             <li class="nav-item">
-              <RouterLink class="nav-link" to="/lobby">Create Game</RouterLink>
+              <RouterLink class="nav-link" to="/lobby/create">Create Game</RouterLink>
             </li>
             <li class="nav-item">
-              <RouterLink class="nav-link" to="/join">Join</RouterLink>
+              <RouterLink class="nav-link" to="/lobby/join">Join</RouterLink>
             </li>
            
           </ul>

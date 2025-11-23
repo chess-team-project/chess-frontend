@@ -13,7 +13,7 @@
             <p class="card-text flex-grow-1">
               Generate a unique key and share it so your opponent can join.
             </p>
-            <RouterLink class="btn btn-primary" to="/lobby">
+            <RouterLink class="btn btn-primary" to="/lobby/create">
               Create Key
             </RouterLink>
           </div>
@@ -26,7 +26,7 @@
             <p class="card-text flex-grow-1">
               Enter a key to join an existing game, or get one from a friend.
             </p>
-            <RouterLink class="btn btn-outline-primary" to="/join">
+            <RouterLink class="btn btn-outline-primary" to="/lobby/join">
               Enter Key
             </RouterLink>
           </div>
