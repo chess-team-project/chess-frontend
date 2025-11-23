@@ -2,8 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router';
 import type { RouteRecordRaw } from 'vue-router';
 
 import Home from '../views/Home.vue';
-import CreateGame from '../components/CreateLobby.vue';
-import JoinGame from '../components/JoinLobby.vue';
+import LobbyForm from '../components/Lobby.vue';
 import GameBoard from '../components/GameBoard.vue';
 
 const routes: RouteRecordRaw[] = [
@@ -12,16 +11,18 @@ const routes: RouteRecordRaw[] = [
           name: 'Home',
           component: Home,
      },
-     {
-          path: '/lobby',
-          name: 'CreateGame',
-          component: CreateGame,
-     },
-     {
-          path: '/join',
-          name: 'JoinGame',
-          component: JoinGame,
-     },
+         {
+              path: '/lobby',
+              name: 'CreateGame',
+              component: LobbyForm,
+              props: { mode: 'create' },
+         },
+         {
+              path: '/join',
+              name: 'JoinGame',
+              component: LobbyForm,
+              props: { mode: 'join' },
+         },
      {
           path: '/board',
           name: 'GameBoard',
