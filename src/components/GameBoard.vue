@@ -71,11 +71,12 @@ const goBack = () => {
 
 onMounted(async () => {
   try {
-    // Get room ID and player name from route params
-    roomId.value = (route.params.roomId as string) || '';
-    playerName.value = (route.params.playerName as string) || '';
+    // Get room ID and player name from route query
+    roomId.value = (route.query.roomId as string) || '';
+    playerName.value = (route.query.playerName as string) || '';
     // Optional player color passed from lobby (White/Black)
-    playerColor.value = (route.params.playerColor as string) || '';
+    playerColor.value = (route.query.playerColor as string) || '';
+    console.log('Joining room (query):', route.query.roomId, 'as', playerName.value, 'color:', route.query.playerColor);
 
     if (!gameSocketService.isConnected()) {
       await gameSocketService.connect();
