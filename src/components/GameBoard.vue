@@ -14,9 +14,8 @@
           </div>
 
           <div class="chessboard-container d-flex justify-content-center mb-4">
-            <Chessboard
-              :position="boardPosition"
-              :orientation="boardOrientation"
+            <TheChessboard
+              :board-config="boardConfig"
             />
           </div>
 
@@ -56,7 +55,7 @@ import { useRouter, useRoute } from 'vue-router';
 import { RouterLink } from 'vue-router';
 import { gameSocketService } from '@/services/game-socket';
 import { Chess } from 'chess.js';
-import { Chessboard } from 'vue3-chessboard';
+import { TheChessboard } from 'vue3-chessboard';
 import 'vue3-chessboard/style.css';
 
 const router = useRouter();
@@ -77,44 +76,29 @@ const status = ref('Connecting to game...');
 const error = ref('');
 const connected = ref(false);
 
-// Convert FEN to chessboard position format for vue3-chessboard
-// Position format: { 'a1': 'wR', 'b1': 'wN', ... }
-// Format: 'w' or 'b' (color) + piece type (K, Q, R, B, N, P)
-const boardPosition = computed(() => {
+// Board configuration for vue3-chessboard
+// TheChessboard uses boardConfig with fen property directly
+const boardConfig = computed(() => {
   try {
+    // Validate FEN
     const chess = new Chess(FEN_POSITION);
-    const position: Record<string, string> = {};
     
-    // Iterate through all squares on the board
-    const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
-    const ranks = [8, 7, 6, 5, 4, 3, 2, 1];
-    
-    ranks.forEach(rank => {
-      files.forEach(file => {
-        const square = `${file}${rank}`;
-        const piece = chess.get(square);
-        
-        if (piece) {
-          // Convert chess.js piece format to vue3-chessboard format
-          // chess.js: { type: 'p', color: 'w' } -> vue3-chessboard: 'wP'
-          const color = piece.color === 'w' ? 'w' : 'b';
-          const type = piece.type.toUpperCase();
-          position[square] = `${color}${type}`;
-        }
-      });
-    });
-    
-    return position;
+    return {
+      fen: FEN_POSITION,
+      orientation: playerColor.value?.toLowerCase() === 'black' ? 'black' : 'white',
+      coordinates: true,
+      viewOnly: false, // Set to true if you don't want user interaction
+    };
   } catch (err) {
     console.error('Error parsing FEN:', err);
     error.value = `Invalid FEN position: ${err instanceof Error ? err.message : 'Unknown error'}`;
-    return {};
+    return {
+      fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', // Fallback to starting position
+      orientation: 'white',
+      coordinates: true,
+      viewOnly: false,
+    };
   }
-});
-
-// Board orientation based on player color
-const boardOrientation = computed(() => {
-  return playerColor.value?.toLowerCase() === 'black' ? 'black' : 'white';
 });
 
 const goBack = () => {
