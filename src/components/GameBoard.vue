@@ -13,12 +13,11 @@
             {{ status }}
           </div>
 
-          <div class="board">
-            <div
-              v-for="cell in 64"
-              :key="cell"
-              :class="['square', (Math.floor((cell - 1) / 8) + (cell - 1) % 8) % 2 === 0 ? 'light' : 'dark']"
-            ></div>
+          <div class="chessboard-container d-flex justify-content-center mb-4">
+            <Chessboard
+              :position="boardPosition"
+              :orientation="boardOrientation"
+            />
           </div>
 
           <div class="mt-4">
@@ -29,6 +28,9 @@
                 </p>
                 <p v-if="roomId" class="text-muted">
                   <strong>Room:</strong> {{ roomId }}
+                </p>
+                <p class="text-muted">
+                  <strong>Current FEN:</strong> <code>{{ FEN_POSITION }}</code>
                 </p>
               </div>
             </div>
@@ -49,13 +51,24 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref, computed } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { RouterLink } from 'vue-router';
 import { gameSocketService } from '@/services/game-socket';
+import { Chess } from 'chess.js';
+import { Chessboard } from 'vue3-chessboard';
+import 'vue3-chessboard/style.css';
 
 const router = useRouter();
 const route = useRoute();
+
+// Hardcoded FEN position - starting position
+// You can change this to any valid FEN string to test different positions
+// Examples:
+// - Starting position: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+// - Middle game: 'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4'
+// - Endgame: '8/8/8/8/8/4k3/4P3/4K3 w - - 0 1'
+const FEN_POSITION = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 const roomId = ref('');
 const playerName = ref('');
@@ -63,6 +76,46 @@ const playerColor = ref('');
 const status = ref('Connecting to game...');
 const error = ref('');
 const connected = ref(false);
+
+// Convert FEN to chessboard position format for vue3-chessboard
+// Position format: { 'a1': 'wR', 'b1': 'wN', ... }
+// Format: 'w' or 'b' (color) + piece type (K, Q, R, B, N, P)
+const boardPosition = computed(() => {
+  try {
+    const chess = new Chess(FEN_POSITION);
+    const position: Record<string, string> = {};
+    
+    // Iterate through all squares on the board
+    const files = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h'];
+    const ranks = [8, 7, 6, 5, 4, 3, 2, 1];
+    
+    ranks.forEach(rank => {
+      files.forEach(file => {
+        const square = `${file}${rank}`;
+        const piece = chess.get(square);
+        
+        if (piece) {
+          // Convert chess.js piece format to vue3-chessboard format
+          // chess.js: { type: 'p', color: 'w' } -> vue3-chessboard: 'wP'
+          const color = piece.color === 'w' ? 'w' : 'b';
+          const type = piece.type.toUpperCase();
+          position[square] = `${color}${type}`;
+        }
+      });
+    });
+    
+    return position;
+  } catch (err) {
+    console.error('Error parsing FEN:', err);
+    error.value = `Invalid FEN position: ${err instanceof Error ? err.message : 'Unknown error'}`;
+    return {};
+  }
+});
+
+// Board orientation based on player color
+const boardOrientation = computed(() => {
+  return playerColor.value?.toLowerCase() === 'black' ? 'black' : 'white';
+});
 
 const goBack = () => {
   gameSocketService.disconnect();
@@ -136,25 +189,8 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.board {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 2px;
-  max-width: 480px;
-  margin-inline: auto;
-  border: 4px solid #6c757d;
-}
-
-.square {
-  aspect-ratio: 1 / 1;
-}
-
-.light {
-  background-color: #f8f9fa;
-}
-
-.dark {
-  background-color: #6c757d;
+.chessboard-container {
+  min-height: 400px;
 }
 </style>
 
