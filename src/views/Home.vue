@@ -32,6 +32,19 @@
           </div>
         </div>
       </div>
+      <div class="col-md-4">
+        <div class="card shadow-sm h-100 border-info">
+          <div class="card-body d-flex flex-column">
+            <h2 class="card-title">Test Chessboard</h2>
+            <p class="card-text flex-grow-1">
+              Test the chessboard component and render positions from FEN notation without connecting to a game.
+            </p>
+            <RouterLink class="btn btn-info" to="/test/chessboard">
+              Test Board
+            </RouterLink>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>

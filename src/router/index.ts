@@ -4,6 +4,7 @@ import type { RouteRecordRaw } from "vue-router";
 import Home from "../views/Home.vue";
 import Lobby from "../components/Lobby.vue";
 import GameBoard from "../components/GameBoard.vue";
+import ChessboardTest from "../components/ChessboardTest.vue";
 
 const routes: RouteRecordRaw[] = [
   {
@@ -27,6 +28,11 @@ const routes: RouteRecordRaw[] = [
     path: "/board",
     name: "GameBoard",
     component: GameBoard,
+  },
+  {
+    path: "/test/chessboard",
+    name: "ChessboardTest",
+    component: ChessboardTest,
   },
 ];
 
