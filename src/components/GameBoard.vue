@@ -13,12 +13,10 @@
             {{ status }}
           </div>
 
-          <div class="board">
-            <div
-              v-for="cell in 64"
-              :key="cell"
-              :class="['square', (Math.floor((cell - 1) / 8) + (cell - 1) % 8) % 2 === 0 ? 'light' : 'dark']"
-            ></div>
+          <div class="chessboard-container d-flex justify-content-center mb-4">
+            <TheChessboard
+              :board-config="boardConfig"
+            />
           </div>
 
           <div class="mt-4">
@@ -29,6 +27,9 @@
                 </p>
                 <p v-if="roomId" class="text-muted">
                   <strong>Room:</strong> {{ roomId }}
+                </p>
+                <p class="text-muted">
+                  <strong>Current FEN:</strong> <code>{{ FEN_POSITION }}</code>
                 </p>
               </div>
             </div>
@@ -49,13 +50,24 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue';
+import { onMounted, onUnmounted, ref, computed } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { RouterLink } from 'vue-router';
 import { gameSocketService } from '@/services/game-socket';
+import { Chess } from 'chess.js';
+import { TheChessboard } from 'vue3-chessboard';
+import 'vue3-chessboard/style.css';
 
 const router = useRouter();
 const route = useRoute();
+
+// Hardcoded FEN position - starting position
+// You can change this to any valid FEN string to test different positions
+// Examples:
+// - Starting position: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+// - Middle game: 'r1bqkb1r/pppp1ppp/2n2n2/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R w KQkq - 4 4'
+// - Endgame: '8/8/8/8/8/4k3/4P3/4K3 w - - 0 1'
+const FEN_POSITION = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1';
 
 const roomId = ref('');
 const playerName = ref('');
@@ -63,6 +75,31 @@ const playerColor = ref('');
 const status = ref('Connecting to game...');
 const error = ref('');
 const connected = ref(false);
+
+// Board configuration for vue3-chessboard
+// TheChessboard uses boardConfig with fen property directly
+const boardConfig = computed(() => {
+  try {
+    // Validate FEN
+    const chess = new Chess(FEN_POSITION);
+    
+    return {
+      fen: FEN_POSITION,
+      orientation: playerColor.value?.toLowerCase() === 'black' ? 'black' : 'white',
+      coordinates: true,
+      viewOnly: false, // Set to true if you don't want user interaction
+    };
+  } catch (err) {
+    console.error('Error parsing FEN:', err);
+    error.value = `Invalid FEN position: ${err instanceof Error ? err.message : 'Unknown error'}`;
+    return {
+      fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', // Fallback to starting position
+      orientation: 'white',
+      coordinates: true,
+      viewOnly: false,
+    };
+  }
+});
 
 const goBack = () => {
   gameSocketService.disconnect();
@@ -136,25 +173,8 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-.board {
-  display: grid;
-  grid-template-columns: repeat(8, minmax(0, 1fr));
-  gap: 2px;
-  max-width: 480px;
-  margin-inline: auto;
-  border: 4px solid #6c757d;
-}
-
-.square {
-  aspect-ratio: 1 / 1;
-}
-
-.light {
-  background-color: #f8f9fa;
-}
-
-.dark {
-  background-color: #6c757d;
+.chessboard-container {
+  min-height: 400px;
 }
 </style>
 
