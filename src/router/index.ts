@@ -25,7 +25,7 @@ const routes: RouteRecordRaw[] = [
     props: { mode: "join" },
   },
   {
-    path: "/board",
+    path: "/board/:roomId/:gameId/:playerName/:playerColor",
     name: "GameBoard",
     component: GameBoard,
   },
