@@ -4,7 +4,7 @@
  */
 
 import { io, type Socket } from 'socket.io-client';
-import type { C2SLobbyEvents, S2CLobbyEvents } from '@/types/socket-events';
+import type { C2SLobbyEvents, S2CLobbyEvents } from '@/types/interfaces';
 
 class LobbySocketService {
   private socket: Socket<S2CLobbyEvents, C2SLobbyEvents> | null = null;

@@ -4,7 +4,7 @@
  */
 
 import { io, type Socket } from 'socket.io-client';
-import type { C2SGameEvents, S2CGameEvents } from '@/types/socket-events';
+import type { C2SGameEvents, S2CGameEvents } from '@/types/interfaces';
 
 class GameSocketService {
   private socket: Socket<S2CGameEvents, C2SGameEvents> | null = null;
