@@ -13,6 +13,10 @@
             {{ status }}
           </div>
 
+          <div v-if="resultMessage" :class="['alert', isResultWinner ? 'alert-success' : 'alert-danger']">
+            {{ resultMessage }}
+          </div>
+
           <div class="row mb-4">
             <!-- Game Info Column -->
             <div class="col-md-3">
@@ -128,6 +132,8 @@ const status = ref('Connecting to game...');
 const error = ref('');
 const connected = ref(false);
 const waitingForMoveAck = ref(false);
+const resultMessage = ref('');
+const isResultWinner = ref<boolean | null>(null);
 
 // Chess game state
 const chess = ref(new Chess());
@@ -435,6 +441,31 @@ onMounted(async () => {
       status.value = '';
       gameStatus.value = 'finished';
     });
+
+    // Listen for game result (winner/loser)
+    gameSocketService.on('game:result', (payload: { winner: string; loser: string }) => {
+      try {
+        console.log('Game result received:', payload);
+        gameStatus.value = 'finished';
+
+        if (payload.winner === playerName.value) {
+          status.value = '🎉 You won!';
+          resultMessage.value = `You won — opponent: ${payload.loser}`;
+          isResultWinner.value = true;
+        } else if (payload.loser === playerName.value) {
+          status.value = '😞 You lost';
+          resultMessage.value = `You lost — winner: ${payload.winner}`;
+          isResultWinner.value = false;
+        } else {
+          // Fallback for spectators or name mismatch
+          status.value = '';
+          resultMessage.value = `Game finished. Winner: ${payload.winner}, Loser: ${payload.loser}`;
+          isResultWinner.value = false;
+        }
+      } catch (err) {
+        console.error('Error handling game:result:', err);
+      }
+    });
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to connect to game';
     connected.value = false;
@@ -455,6 +486,7 @@ onUnmounted(() => {
   gameSocketService.off('game:update');
   gameSocketService.off('game:error');
   gameSocketService.off('game:opponentDisconnected');
+  gameSocketService.off('game:result');
 });
 </script>
 
