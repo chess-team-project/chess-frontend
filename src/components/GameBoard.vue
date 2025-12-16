@@ -86,8 +86,9 @@
             <div class="col-md-7">
               <div class="chessboard-container d-flex justify-content-center mb-3">
                 <TheChessboard
-                  :key="`${boardRefreshKey}-${playerColor}`"
+                  :key="`board-${playerColor}`"
                   :board-config="boardConfig"
+                  :reactive-config="true"
                   @move="onChessboardMove"
                 />
               </div>
@@ -105,7 +106,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref, computed } from 'vue';
+import { onMounted, onUnmounted, ref, computed, watch, nextTick } from 'vue';
 import { useRouter, useRoute } from 'vue-router';
 import { RouterLink } from 'vue-router';
 import { gameSocketService } from '@/services/game-socket';
@@ -127,7 +128,6 @@ const status = ref('Connecting to game...');
 const error = ref('');
 const connected = ref(false);
 const waitingForMoveAck = ref(false);
-const boardRefreshKey = ref(0);
 
 // Chess game state
 const chess = ref(new Chess());
@@ -140,27 +140,42 @@ const isPlayerTurn = computed(() => {
   return currentTurn.value === 'b';
 });
 
-// Board configuration
-const boardConfig = computed<BoardConfig>(() => {
-  try {
-    const config: BoardConfig = {
-      fen: currentFEN.value,
-      orientation: playerColor.value,
-      coordinates: true,
-      viewOnly: false,
-    };
-    console.log('🎨 Board config updated:', { fen: config.fen, orientation: config.orientation });
-    return config;
-  } catch (err) {
-    console.error('Error creating board config:', err);
-    return {
-      fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
-      orientation: 'white',
-      coordinates: true,
-      viewOnly: false,
-    };
-  }
+// Board configuration - use ref for reactive-config to work properly
+const boardConfig = ref<BoardConfig>({
+  fen: 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1',
+  orientation: 'white',
+  coordinates: true,
+  viewOnly: false,
 });
+
+// Update board config when FEN or player color changes
+// Update properties directly for reactive-config to work properly
+const updateBoardConfig = () => {
+  try {
+    const newFEN = currentFEN.value;
+    const newOrientation = playerColor.value;
+    const newViewOnly = !isPlayerTurn.value || waitingForMoveAck.value;
+    
+    // Only update if values actually changed to prevent infinite loops
+    if (boardConfig.value.fen !== newFEN) {
+      boardConfig.value.fen = newFEN;
+    }
+    if (boardConfig.value.orientation !== newOrientation) {
+      boardConfig.value.orientation = newOrientation;
+    }
+    if (boardConfig.value.viewOnly !== newViewOnly) {
+      boardConfig.value.viewOnly = newViewOnly;
+    }
+  } catch (err) {
+    console.error('Error updating board config:', err);
+  }
+};
+
+// Watch for changes to update board config reactively
+// Use flush: 'post' to ensure updates happen after DOM updates
+watch([currentFEN, playerColor, isPlayerTurn, waitingForMoveAck], () => {
+  updateBoardConfig();
+}, { immediate: true, flush: 'post' });
 
 // Handle moves from chessboard
 const onChessboardMove = (moveData: any) => {
@@ -189,21 +204,20 @@ const onChessboardMove = (moveData: any) => {
       return;
     }
 
-    // Apply move locally
-    const move = chess.value.move({
+    // Validate move locally first (but don't apply - wait for server confirmation)
+    const testChess = new Chess(chess.value.fen());
+    const testMove = testChess.move({
       from,
       to,
       promotion: promotion || undefined,
     });
     
-    if (!move) {
+    if (!testMove) {
       error.value = 'Invalid move';
       return;
     }
 
-    // Add to history
-    moveHistory.value.push(move.san);
-    console.log(`✅ Move applied locally: ${move.san}`);
+    console.log(`✅ Move validated locally: ${testMove.san}, sending to server...`);
 
     // Mark as waiting for acknowledgment
     waitingForMoveAck.value = true;
@@ -308,7 +322,7 @@ onMounted(async () => {
     }
 
     // Listen for game:joined event
-    gameSocketService.on('game:joined', (payload) => {
+    gameSocketService.on('game:joined', async (payload) => {
       console.log('Joined game:', payload);
       status.value = payload.message;
       gameStatus.value = 'playing';
@@ -316,6 +330,7 @@ onMounted(async () => {
       // Initialize with starting position if not already set
       if (moveHistory.value.length === 0) {
         chess.value.reset(); // Reset to starting position
+        // Board config will be updated automatically by the watch on currentFEN
       }
     });
     gameSocketService.on('err', (payload: { message: string }) => {
@@ -325,8 +340,12 @@ onMounted(async () => {
       } catch {
         error.value = payload.message;
       }
+      
+      // No need to revert - we didn't apply the move optimistically
       waitingForMoveAck.value = false;
-    });  gameStatus.value = 'playing';
+    });
+    
+    gameStatus.value = 'playing';
     
     // Listen for opponent ready
     gameSocketService.on('game:opponentReady', (payload) => {
@@ -335,7 +354,7 @@ onMounted(async () => {
     });
 
     // Listen for game updates (includes board state)
-    gameSocketService.on('game:update', (payload: GameSession) => {
+    gameSocketService.on('game:update', async (payload: GameSession) => {
       console.log('📊 Game update received:', payload);
       try {
         // Update gameId if we don't have it
@@ -343,33 +362,52 @@ onMounted(async () => {
           gameId.value = payload.gameId;
         }
 
-        // Store previous FEN for debugging
+        // Store previous state for debugging
         const prevFEN = chess.value.fen();
+        const previousMoveCount = chess.value.history().length;
         
-        // Load new FEN from server (this is the authoritative state)
+        // ALWAYS load FEN from server - it's the source of truth
+        // This ensures both players see the same position
         if (payload.fen) {
-          console.log(`📥 Loading FEN: ${payload.fen}`);
+          console.log(`📥 Server FEN: ${payload.fen}`);
           console.log(`📥 Previous FEN: ${prevFEN}`);
+          console.log(`📥 FEN changed: ${payload.fen !== prevFEN}`);
+          
+          // Load the authoritative state from server
           chess.value.load(payload.fen);
           
-          // Force board refresh
-          boardRefreshKey.value++;
-          console.log(`🔄 Board refresh key: ${boardRefreshKey.value}`);
+          // Force Vue to recognize the change by accessing the computed
+          const newFEN = chess.value.fen();
+          console.log(`📋 Loaded FEN: ${newFEN}`);
           
           // Get full move history from chess engine
           const allMoves = chess.value.history({ verbose: true });
           moveHistory.value = allMoves.map(m => m.san);
           
-          console.log(`📋 Move history synced (${moveHistory.value.length} moves): ${moveHistory.value.join(', ')}`);
-          console.log(`📋 New FEN: ${chess.value.fen()}`);
+          // Log move information
+          if (allMoves.length > previousMoveCount) {
+            const lastMove = allMoves[allMoves.length - 1];
+            console.log(`✅ New move applied: ${lastMove.san} (from ${lastMove.from} to ${lastMove.to})`);
+          } else if (allMoves.length < previousMoveCount) {
+            console.warn(`⚠️ Server state has fewer moves than local. Syncing to server state.`);
+          } else if (payload.fen !== prevFEN) {
+            console.log(`🔄 Position synced (same move count, different FEN)`);
+          }
+          
+          console.log(`📋 Move history: ${moveHistory.value.length} moves - ${moveHistory.value.join(', ')}`);
+          
+          // Board config will be updated automatically by the watch on currentFEN
+          // No need to call updateBoardConfig() here to avoid recursive updates
+        } else {
+          console.warn('⚠️ game:update received without FEN');
         }
         
-        // Force reactive update by accessing the computed property
-        console.log(`📊 Current board FEN: ${currentFEN.value}`);
+        // Reset waiting flag - server has processed the move (ours or opponent's)
+        waitingForMoveAck.value = false;
         
         // Check whose turn it is
         const turn = chess.value.turn();
-        console.log(`🔄 Turn: ${turn}, My color: ${playerColor.value}`);
+        console.log(`🔄 Turn: ${turn === 'w' ? 'White' : 'Black'}, My color: ${playerColor.value}`);
         
         // Determine if it's player's turn
         const isMyTurn = (turn === 'w' && playerColor.value === 'white') || 
@@ -377,13 +415,16 @@ onMounted(async () => {
         
         if (isMyTurn) {
           status.value = playerColor.value === 'white' ? '✅ Your turn (White)' : '✅ Your turn (Black)';
-          waitingForMoveAck.value = false;
         } else {
           status.value = '⏳ Waiting for opponent...';
         }
+        
+        // Clear any previous errors on successful update
+        error.value = '';
       } catch (err) {
-        console.error('Error updating game state:', err);
+        console.error('❌ Error updating game state:', err);
         error.value = 'Error syncing game state: ' + (err instanceof Error ? err.message : String(err));
+        waitingForMoveAck.value = false;
       }
     });
 
