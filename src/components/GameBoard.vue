@@ -102,6 +102,15 @@
                 </small>
               </div>
             </div>
+
+            <!-- Timer Column -->
+            <div class="col-md-2">
+              <TimerComponent
+                :white-time="whiteClockMs"
+                :black-time="blackClockMs"
+                :current-turn="currentTurn"
+              />
+            </div>
           </div>
         </div>
       </div>
@@ -119,6 +128,7 @@ import { Chess } from 'chess.js';
 import { TheChessboard } from 'vue3-chessboard';
 import 'vue3-chessboard/style.css';
 import type { GameSession } from '@/types/interfaces';
+import TimerComponent from './TimerComponent.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -134,6 +144,8 @@ const connected = ref(false);
 const waitingForMoveAck = ref(false);
 const resultMessage = ref('');
 const isResultWinner = ref<boolean | null>(null);
+const whiteClockMs = ref(300000); // 5 minutes default
+const blackClockMs = ref(300000); // 5 minutes default
 
 // Chess game state
 const chess = ref(new Chess());
@@ -466,6 +478,18 @@ onMounted(async () => {
         console.error('Error handling game:result:', err);
       }
     });
+
+    // Listen for game clock updates
+    gameSocketService.on('game:clock', (payload: { white: number; black: number }) => {
+      try {
+        console.log('Clock update received:', payload);
+        // Backend sends time in seconds, convert to milliseconds
+        whiteClockMs.value = payload.white * 1000;
+        blackClockMs.value = payload.black * 1000;
+      } catch (err) {
+        console.error('Error handling game:clock:', err);
+      }
+    });
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Failed to connect to game';
     connected.value = false;
@@ -487,6 +511,7 @@ onUnmounted(() => {
   gameSocketService.off('game:error');
   gameSocketService.off('game:opponentDisconnected');
   gameSocketService.off('game:result');
+  gameSocketService.off('game:clock');
 });
 </script>
 
