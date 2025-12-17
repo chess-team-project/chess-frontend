@@ -17,6 +17,18 @@
             {{ resultMessage }}
           </div>
 
+          <div v-if="drawOfferFrom" class="alert alert-secondary d-flex align-items-center justify-content-between">
+            <div>
+              <strong>Draw offer:</strong>
+              <span v-if="drawOfferFrom === playerColor">You offered a draw — waiting for opponent</span>
+              <span v-else>Opponent offered a draw</span>
+            </div>
+            <div v-if="drawOfferFrom !== playerColor">
+              <button class="btn btn-sm btn-success me-2" @click="acceptDraw">Accept</button>
+              <button class="btn btn-sm btn-outline-secondary" @click="declineDraw">Decline</button>
+            </div>
+          </div>
+
           <div class="row mb-4">
             <!-- Game Info Column -->
             <div class="col-md-3">
@@ -104,12 +116,26 @@
             </div>
 
             <!-- Timer Column -->
-            <div class="col-md-2">
-              <TimerComponent
-                :white-time="whiteClockMs"
-                :black-time="blackClockMs"
-                :current-turn="currentTurn"
-              />
+            <div class="col-md-2 col-12 timers-wrapper d-flex flex-column justify-content-between" style="min-height:500px;">
+              <!-- Top-right: Opponent -->
+              <div class="timer-opponent d-flex justify-content-end mt-2">
+                <TimerBubble
+                  :time="playerColor === 'white' ? blackClockMs : whiteClockMs"
+                  label="Opponent"
+                  :active="playerColor === 'white' ? currentTurn === 'b' : currentTurn === 'w'"
+                  :size="90"
+                />
+              </div>
+
+              <!-- Bottom-right: You -->
+              <div class="timer-you d-flex justify-content-end mb-2">
+                <TimerBubble
+                  :time="playerColor === 'white' ? whiteClockMs : blackClockMs"
+                  label="You"
+                  :active="playerColor === 'white' ? currentTurn === 'w' : currentTurn === 'b'"
+                  :size="100"
+                />
+              </div>
             </div>
           </div>
         </div>
@@ -128,7 +154,7 @@ import { Chess } from 'chess.js';
 import { TheChessboard } from 'vue3-chessboard';
 import 'vue3-chessboard/style.css';
 import type { GameSession } from '@/types/interfaces';
-import TimerComponent from './TimerComponent.vue';
+import TimerBubble from './TimerBubble.vue';
 
 const router = useRouter();
 const route = useRoute();
@@ -146,6 +172,7 @@ const resultMessage = ref('');
 const isResultWinner = ref<boolean | null>(null);
 const whiteClockMs = ref(300000); // 5 minutes default
 const blackClockMs = ref(300000); // 5 minutes default
+const drawOfferFrom = ref<'white' | 'black' | null>(null);
 
 // Chess game state
 const chess = ref(new Chess());
@@ -157,6 +184,7 @@ const isPlayerTurn = computed(() => {
   if (playerColor.value === 'white') return currentTurn.value === 'w';
   return currentTurn.value === 'b';
 });
+const isGameFinished = computed(() => gameStatus.value === 'finished');
 
 // Board configuration - use ref for reactive-config to work properly
 const boardConfig = ref<BoardConfig>({
@@ -172,7 +200,8 @@ const updateBoardConfig = () => {
   try {
     const newFEN = currentFEN.value;
     const newOrientation = playerColor.value;
-    const newViewOnly = !isPlayerTurn.value || waitingForMoveAck.value;
+    const newViewOnly =
+  isGameFinished.value || !isPlayerTurn.value || waitingForMoveAck.value;
     
     // Only update if values actually changed to prevent infinite loops
     if (boardConfig.value.fen !== newFEN) {
@@ -197,8 +226,15 @@ watch([currentFEN, playerColor, isPlayerTurn, waitingForMoveAck], () => {
 
 // Handle moves from chessboard
 const onChessboardMove = (moveData: any) => {
+  // ✅ ГОЛОВНИЙ ЗАХИСТ: після resign / finished — жодних ходів
+  if (gameStatus.value === 'finished') {
+    console.warn('⛔ Move blocked: game already finished');
+    return;
+  }
+
   try {
     console.log('♟️ Move attempt:', moveData);
+
     
     // Don't allow moves while waiting for server acknowledgment
     if (waitingForMoveAck.value) {
@@ -273,14 +309,65 @@ const handleOpponentMove = (moveData: any) => {
 };
 
 const offerDraw = () => {
-  // TODO: Implement draw offer when backend supports it
-  error.value = 'Draw offer not yet implemented';
+  try {
+    if (!roomId.value) {
+      error.value = 'Missing room id';
+      return;
+    }
+    // Emit draw offer to server using lobby roomId
+    console.log('📨 Emitting game:draw:offer', { roomId: roomId.value });
+    gameSocketService.emit('game:draw:offer', { roomId: roomId.value });
+    // Optimistically mark that we offered a draw
+    drawOfferFrom.value = playerColor.value;
+    status.value = 'Draw offered — waiting for opponent';
+  } catch (err) {
+    console.error('Error offering draw:', err);
+    error.value = err instanceof Error ? err.message : 'Failed to offer draw';
+  }
+};
+
+const acceptDraw = () => {
+  try {
+    if (!roomId.value) {
+      error.value = 'Missing room id';
+      return;
+    }
+    console.log('📨 Emitting game:draw:accept', { roomId: roomId.value });
+    gameSocketService.emit('game:draw:accept', { roomId: roomId.value });
+    // wait for server to emit game:finished and game:update
+    status.value = 'Accepted draw — waiting for server...';
+  } catch (err) {
+    console.error('Error accepting draw:', err);
+    error.value = err instanceof Error ? err.message : 'Failed to accept draw';
+  }
+};
+
+const declineDraw = () => {
+  // Simple local dismissal — server should clear drawOfferFrom via game:update
+  drawOfferFrom.value = null;
+  status.value = 'Draw rejected';
 };
 
 const resign = () => {
-  // TODO: Implement resign when backend supports it
-  error.value = 'Resign not yet implemented';
+  try {
+    if (!roomId.value) {
+      error.value = 'Missing room id';
+      return;
+    }
+
+    // ✅ Миттєво блокуємо дошку локально, не чекаючи бекенда
+    gameStatus.value = 'finished';
+    waitingForMoveAck.value = true;
+    status.value = 'You resigned. Waiting for server...';
+
+    console.log('🏳️ Emitting game:resign', { roomId: roomId.value });
+    gameSocketService.emit('game:resign', { roomId: roomId.value });
+  } catch (err) {
+    error.value = err instanceof Error ? err.message : 'Failed to resign';
+  }
 };
+
+
 
 onMounted(async () => {
   try {
@@ -325,16 +412,16 @@ onMounted(async () => {
       });
     }
 
-    // Send game:join event (use gameId/UUID)
-    if (gameId.value && playerName.value) {
-      console.log('📨 Sending game:join event...', { gameId: gameId.value, playerName: playerName.value });
+    // Send game:join event (use roomId from route params)
+    if (roomId.value && playerName.value) {
+      console.log('📨 Sending game:join event...', { roomId: roomId.value, playerName: playerName.value });
       gameSocketService.emit('game:join', {
-        roomId: gameId.value,
+        roomId: roomId.value,
         playerName: playerName.value,
       });
-      status.value = `Joining game ${gameId.value}...`;
+      status.value = `Joining room ${roomId.value}...`;
     } else {
-      error.value = `Missing required params: gameId=${gameId.value}, playerName=${playerName.value}`;
+      error.value = `Missing required params: roomId=${roomId.value}, playerName=${playerName.value}`;
       console.error(error.value);
       return;
     }
@@ -437,6 +524,16 @@ onMounted(async () => {
           status.value = '⏳ Waiting for opponent...';
         }
         
+        // Update draw offer state if provided by server
+        if (typeof (payload as any).drawOfferFrom !== 'undefined') {
+          drawOfferFrom.value = (payload as any).drawOfferFrom || null;
+        }
+
+        // Update gameStatus from payload if provided
+        if ((payload as any).gameStatus) {
+          gameStatus.value = (payload as any).gameStatus as any;
+        }
+
         // Clear any previous errors on successful update
         error.value = '';
       } catch (err) {
@@ -452,6 +549,37 @@ onMounted(async () => {
       error.value = payload.message;
       status.value = '';
       gameStatus.value = 'finished';
+    });
+
+    // Listen for draw offered by server (explicit event)
+    gameSocketService.on('game:draw:offered', (payload: { from: 'white' | 'black' }) => {
+      try {
+        console.log('Draw offered by:', payload.from);
+        drawOfferFrom.value = payload.from;
+        // If opponent offered, show a prompt
+        if (payload.from !== playerColor.value) {
+          status.value = 'Opponent offered a draw';
+        } else {
+          status.value = 'Draw offered (waiting for opponent)';
+        }
+      } catch (err) {
+        console.error('Error handling draw offered:', err);
+      }
+    });
+
+    // Listen for finished messages (e.g., draw agreed)
+    gameSocketService.on('game:finished', (payload: { message: string }) => {
+      try {
+        console.log('Game finished:', payload.message);
+        status.value = payload.message;
+        gameStatus.value = 'finished';
+        if (payload.message.toLowerCase().includes('draw')) {
+          resultMessage.value = payload.message;
+          isResultWinner.value = null;
+        }
+      } catch (err) {
+        console.error('Error handling game:finished:', err);
+      }
     });
 
     // Listen for game result (winner/loser)
@@ -512,6 +640,8 @@ onUnmounted(() => {
   gameSocketService.off('game:opponentDisconnected');
   gameSocketService.off('game:result');
   gameSocketService.off('game:clock');
+  gameSocketService.off('game:draw:offered');
+  gameSocketService.off('game:finished');
 });
 </script>
 
@@ -523,6 +653,31 @@ onUnmounted(() => {
   justify-content: center;
   background-color: #f8f9fa;
   border-radius: 0.5rem;
+}
+
+/* Make chessboard container a positioning context for small-screen timer bubbles */
+.chessboard-container {
+  position: relative;
+}
+
+/* Timers wrapper defaults (wide screens): column on the right with top and bottom alignment */
+.timers-wrapper {
+  position: static;
+}
+
+/* Small screens: position opponent left of board and player right of board, vertically centered */
+@media (max-width: 767.98px) {
+  /* Keep timers stacked top/bottom on small screens; only reduce sizes */
+  .timers-wrapper {
+    position: static;
+  }
+
+  /* Reduce bubble sizes on very small screens */
+  .timer-bubble .bubble {
+    width: 72px !important;
+    height: 72px !important;
+    font-size: 0.95rem !important;
+  }
 }
 
 .move-history {

@@ -5,6 +5,8 @@ export interface S2CGameEvents extends S2CCommonEvents {
   'game:joined': (payload: { message: string }) => void;
   'game:opponentReady': (payload: { message: string }) => void;
   'game:result': (payload: { winner: string; loser: string }) => void;
+  'game:draw:offered': (payload: { from: 'white' | 'black' }) => void;
+  'game:finished': (payload: { message: string }) => void;
   'game:clock': (payload: { white: number; black: number }) => void;
   'game:update': (payload: GameSession) => void;
   'game:error': (payload: { message: string }) => void;
@@ -13,13 +15,20 @@ export interface S2CGameEvents extends S2CCommonEvents {
 
 export interface C2SGameEvents {
   'game:join': (payload: { roomId: string; playerName: string }) => void;
+
   'game:move': (payload: {
     roomId: string;
-    /** Move string in algebraic squares format, e.g. 'e2e4' or 'e7e8q' */
     move: string;
     playerName: string;
   }) => void;
+
+  'game:draw:offer': (payload: { roomId: string }) => void;
+  'game:draw:accept': (payload: { roomId: string }) => void;
+
+  // ✅ ДОДАЙ ЦЕ
+  'game:resign': (payload: { roomId: string }) => void;
 }
+
 
 export interface GameSession {
   gameId: string;
@@ -37,6 +46,10 @@ export interface GameSession {
   };
   fen: string | null;
   legalMoves: string[] | null;
+  // Optional draw offer state (which side offered a draw)
+  drawOfferFrom?: 'white' | 'black' | null;
+  // Optional game status, can include 'draw'
+  gameStatus?: 'waiting' | 'playing' | 'finished' | 'draw';
 }
 
 
