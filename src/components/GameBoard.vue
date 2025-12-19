@@ -17,17 +17,7 @@
             {{ resultMessage }}
           </div>
 
-          <div v-if="drawOfferFrom" class="alert alert-secondary d-flex align-items-center justify-content-between">
-            <div>
-              <strong>Draw offer:</strong>
-              <span v-if="drawOfferFrom === playerColor">You offered a draw — waiting for opponent</span>
-              <span v-else>Opponent offered a draw</span>
-            </div>
-            <div v-if="drawOfferFrom !== playerColor">
-              <button class="btn btn-sm btn-success me-2" @click="acceptDraw">Accept</button>
-              <button class="btn btn-sm btn-outline-secondary" @click="declineDraw">Decline</button>
-            </div>
-          </div>
+          <!-- Draw offer UI removed per request -->
 
           <div class="row mb-4">
             <!-- Game Info Column -->
@@ -80,15 +70,9 @@
               <!-- Actions -->
               <div class="mt-3">
                 <button 
-                  class="btn btn-sm btn-warning w-100 mb-2" 
-                  @click="offerDraw"
-                  :disabled="!isPlayerTurn"
-                >
-                  Offer Draw
-                </button>
-                <button 
                   class="btn btn-sm btn-danger w-100 mb-2"
                   @click="resign"
+                  :disabled="serverReportedFinished"
                 >
                   Resign
                 </button>
@@ -172,7 +156,9 @@ const resultMessage = ref('');
 const isResultWinner = ref<boolean | null>(null);
 const whiteClockMs = ref(300000); // 5 minutes default
 const blackClockMs = ref(300000); // 5 minutes default
-const drawOfferFrom = ref<'white' | 'black' | null>(null);
+// drawOfferFrom removed — draw UI/logic disabled per request
+// Track whether the server has reported the game finished (used to disable Resign after backend confirmation)
+const serverReportedFinished = ref(false);
 
 // Chess game state
 const chess = ref(new Chess());
@@ -201,7 +187,9 @@ const updateBoardConfig = () => {
     const newFEN = currentFEN.value;
     const newOrientation = playerColor.value;
     const newViewOnly =
-  isGameFinished.value || !isPlayerTurn.value || waitingForMoveAck.value;
+      isGameFinished.value || !isPlayerTurn.value || waitingForMoveAck.value;
+    
+    console.log(`🎮 updateBoardConfig: viewOnly=${newViewOnly} (finished=${isGameFinished.value}, isMyTurn=${isPlayerTurn.value}, waiting=${waitingForMoveAck.value})`);
     
     // Only update if values actually changed to prevent infinite loops
     if (boardConfig.value.fen !== newFEN) {
@@ -220,7 +208,7 @@ const updateBoardConfig = () => {
 
 // Watch for changes to update board config reactively
 // Use flush: 'post' to ensure updates happen after DOM updates
-watch([currentFEN, playerColor, isPlayerTurn, waitingForMoveAck], () => {
+watch([currentFEN, playerColor, isPlayerTurn, waitingForMoveAck, gameStatus], () => {
   updateBoardConfig();
 }, { immediate: true, flush: 'post' });
 
@@ -229,6 +217,7 @@ const onChessboardMove = (moveData: any) => {
   // ✅ ГОЛОВНИЙ ЗАХИСТ: після resign / finished — жодних ходів
   if (gameStatus.value === 'finished') {
     console.warn('⛔ Move blocked: game already finished');
+    error.value = 'Game is finished. No more moves allowed.';
     return;
   }
 
@@ -308,45 +297,7 @@ const handleOpponentMove = (moveData: any) => {
   }
 };
 
-const offerDraw = () => {
-  try {
-    if (!roomId.value) {
-      error.value = 'Missing room id';
-      return;
-    }
-    // Emit draw offer to server using lobby roomId
-    console.log('📨 Emitting game:draw:offer', { roomId: roomId.value });
-    gameSocketService.emit('game:draw:offer', { roomId: roomId.value });
-    // Optimistically mark that we offered a draw
-    drawOfferFrom.value = playerColor.value;
-    status.value = 'Draw offered — waiting for opponent';
-  } catch (err) {
-    console.error('Error offering draw:', err);
-    error.value = err instanceof Error ? err.message : 'Failed to offer draw';
-  }
-};
-
-const acceptDraw = () => {
-  try {
-    if (!roomId.value) {
-      error.value = 'Missing room id';
-      return;
-    }
-    console.log('📨 Emitting game:draw:accept', { roomId: roomId.value });
-    gameSocketService.emit('game:draw:accept', { roomId: roomId.value });
-    // wait for server to emit game:finished and game:update
-    status.value = 'Accepted draw — waiting for server...';
-  } catch (err) {
-    console.error('Error accepting draw:', err);
-    error.value = err instanceof Error ? err.message : 'Failed to accept draw';
-  }
-};
-
-const declineDraw = () => {
-  // Simple local dismissal — server should clear drawOfferFrom via game:update
-  drawOfferFrom.value = null;
-  status.value = 'Draw rejected';
-};
+// Draw offer functions removed — draw feature disabled in UI
 
 const resign = () => {
   try {
@@ -524,10 +475,7 @@ onMounted(async () => {
           status.value = '⏳ Waiting for opponent...';
         }
         
-        // Update draw offer state if provided by server
-        if (typeof (payload as any).drawOfferFrom !== 'undefined') {
-          drawOfferFrom.value = (payload as any).drawOfferFrom || null;
-        }
+        // drawOfferFrom handled server-side; UI for draw offers removed locally
 
         // Update gameStatus from payload if provided
         if ((payload as any).gameStatus) {
@@ -549,23 +497,10 @@ onMounted(async () => {
       error.value = payload.message;
       status.value = '';
       gameStatus.value = 'finished';
+      serverReportedFinished.value = true;
     });
 
-    // Listen for draw offered by server (explicit event)
-    gameSocketService.on('game:draw:offered', (payload: { from: 'white' | 'black' }) => {
-      try {
-        console.log('Draw offered by:', payload.from);
-        drawOfferFrom.value = payload.from;
-        // If opponent offered, show a prompt
-        if (payload.from !== playerColor.value) {
-          status.value = 'Opponent offered a draw';
-        } else {
-          status.value = 'Draw offered (waiting for opponent)';
-        }
-      } catch (err) {
-        console.error('Error handling draw offered:', err);
-      }
-    });
+    // draw-offer socket events removed (UI disabled)
 
     // Listen for finished messages (e.g., draw agreed)
     gameSocketService.on('game:finished', (payload: { message: string }) => {
@@ -573,6 +508,7 @@ onMounted(async () => {
         console.log('Game finished:', payload.message);
         status.value = payload.message;
         gameStatus.value = 'finished';
+        serverReportedFinished.value = true;
         if (payload.message.toLowerCase().includes('draw')) {
           resultMessage.value = payload.message;
           isResultWinner.value = null;
@@ -587,6 +523,7 @@ onMounted(async () => {
       try {
         console.log('Game result received:', payload);
         gameStatus.value = 'finished';
+        serverReportedFinished.value = true;
 
         if (payload.winner === playerName.value) {
           status.value = '🎉 You won!';
@@ -640,7 +577,6 @@ onUnmounted(() => {
   gameSocketService.off('game:opponentDisconnected');
   gameSocketService.off('game:result');
   gameSocketService.off('game:clock');
-  gameSocketService.off('game:draw:offered');
   gameSocketService.off('game:finished');
 });
 </script>

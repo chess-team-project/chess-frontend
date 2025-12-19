@@ -32,7 +32,7 @@
           </div>
         </div>
       </div>
-      <div class="col-md-4">
+      <!-- <div class="col-md-4">
         <div class="card shadow-sm h-100 border-info">
           <div class="card-body d-flex flex-column">
             <h2 class="card-title">Test Chessboard</h2>
@@ -44,7 +44,7 @@
             </RouterLink>
           </div>
         </div>
-      </div>
+      </div> -->
     </div>
   </div>
 </template>
